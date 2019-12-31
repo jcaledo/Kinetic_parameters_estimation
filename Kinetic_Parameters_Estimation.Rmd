@@ -1,0 +1,286 @@
+---
+title: "Enzyme kinetic parameters estimation: a tricky task?"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Why R?
+
+R is a free and powerful software environment for statistical computing and graphics. It compiles and runs on a wide variety of UNIX platforms, Windows and MacOS. While there are many other common applications that will allow you to manipulate lists of numbers (e.g., spreadsheet programs, matlab, etc), R has an attrative advantage: R has a wide and very active community that supports it.
+
+If you still doubt about the benefits of R, I recommend reading why I should use R written by Barry Grant. If on the contrary, you are excited about the idea of starting to use R, then go to oficial R home page and follow the instructions to download and install R into your system. We also encourage you to install RStudio, a useful integrated development environment for R.
+
+## An R function to analyse double-reciprocal plots
+
+Below you will find an R function, named *lb()* (which stands for Lineweaver-Burk) that will carry out the analysis for you. All you will have to do is to provide your kinetic data (later on we will show an example of how to do it). A function is a set of statements organized together to perform a specific task, in our case the double-reciprocal analysis.
+
+```{r}
+
+lb <- function(data, unit_S = 'mM', unit_v = 'au', weighting = FALSE, plot = TRUE){
+
+  ## ---------------------------- Removing incomplete data ----------------------- ##
+  data <- data[complete.cases(data), ]
+  colnames(data)[1] <- 'S'
+
+  ## -------------------------- Taking double reciprocal ----------------------------- ##
+  tdata <- apply(data, MARGIN = 2, function(x)  1/x)
+  tdata <- as.data.frame(round(tdata, 4))
+  names(tdata)[1] <- 'inv_S'
+
+
+  ## ----------------------- Replicates model fitting ----------------------------- ##
+  Kms <- Vms <- R2 <- c()
+  for (j in 2:ncol(tdata)){
+    model <- lm(tdata[,j] ~ tdata$inv_S )
+    Vm <- round(1/model$coefficients[1], 2)
+    Km <- round(Vm * model$coefficients[2], 2)
+    Vms <- c(Vms, Vm)
+    Kms <- c(Kms, Km)
+    R2 <- c(R2,  summary(model)$r.squared)
+  }
+
+  ## -------- Computing mean and sd if required of the transformed data ---------- ##
+  if (ncol(tdata) > 2){
+    tdata$inv_v <- round(apply(tdata[,-1], MARGIN = 1, mean), 4)
+    tdata$sd <- round(apply(tdata[,-c(1, ncol(tdata))], MARGIN = 1, sd), 4)
+  } else {
+    names(tdata)[2] <- 'inv_v'
+  }
+  ## -------------------------- Mean model fitting -------------------------------- ##
+  if (weighting){
+    model <- lm(tdata$inv_v ~ tdata$inv_S, weights = 1/(tdata$inv_v)^4)
+  } else {
+    model <- lm(tdata$inv_v ~ tdata$inv_S)
+  }
+
+  Vm <- round(1/model$coefficients[1], 2)
+  Km <- round(Vm * model$coefficients[2], 2)
+
+  ## --------------------- Plotting the transformed data ------------------------- ##
+  if (plot == TRUE){
+    parameters <- paste('Km: ', Km, '     Vm: ', Vm, sep = "")
+    plot(tdata$inv_S, tdata$inv_v, ty = 'p',
+         ylim = c(0, max(tdata[,-1]) + 0.1*max(tdata[,-1])),
+         xlab = paste('1/[S] (1/', unit_S, ')', sep = ""),
+         ylab = paste('1/v (1/', unit_v, ')', sep = ""), main = parameters)
+    abline(model)
+
+    if (ncol(tdata) > 2){
+      arrows(tdata$inv_S, tdata$inv_v - tdata$sd,
+             tdata$inv_S, tdata$inv_v + tdata$sd,
+             length=0.05, angle=90, code=3)
+    }
+  }
+
+
+  fitted_parameters <- c(Km, Vm)
+  names(fitted_parameters) <- c('Km', 'Vm')
+  output <- list(unname(Kms), unname(Vms), R2, fitted_parameters, tdata)
+  names(output) <- c('Kms', 'Vms', 'R2s', 'fitted_parameters', 'inverse_data')
+  return(output)
+}
+```
+
+This function has one mandatory argument: 
+
+* *data:* a dataframe where the first column is the independent variable, [S], and the reamining columns (as many as experiment replicates) correspond to the dependent variable, v. 
+
+In addition, four additional arguments allow you to change the default setting:
+
+* *unit_S:* concentration unit.
+* *unit_v:* velocity unit.
+* *weighting:* logica, when TRUE the weight $v^4$ is employed.
+* *plot:* logical, if TRUE the data and fitted line are plotted and shown.
+
+## An R function to analyse Eisenthal & Cornish-Bouwden plots
+
+The function *ecb()* given below, represents an alternative approach to estimate the kinetic paramenters of an enzyme. This function takes the same arguments than *lb()*, with the exception of the argument 'weighting'.
+
+```{r}
+ecb <- function(data, unit_S = 'mM', unit_v = 'au', plot = TRUE){
+
+  ## -------------------- Variables' names ---------------------- ##
+  colnames(data)[1] <- 'S'
+  colnames(data)[2:length(colnames(data))] <- LETTERS[1:length(colnames(data)) - 1]
+  data <- data[complete.cases(data), ]
+
+  ## -------------------- Computing v/[S] ----------------------- ##
+  if (ncol(data) > 2){
+    tdata <- apply(data[,-1], MARGIN = 2, function(x)  x/data[,1])
+    mean_v <- apply(data[,-1], MARGIN = 1, mean)
+    mean_v_S <- apply(tdata, MARGIN = 1, mean)
+  } else {
+    tdata <- data[,2]/data[,1]
+    mean_v <- data[,2]
+    mean_v_S <- tdata
+  }
+
+  tdata <- as.data.frame(tdata)
+  names(tdata)[1] <- 'v_S'
+  tdata <- cbind(data, tdata)
+  names(tdata)[2] <- 'v'
+
+  nc <- ncol(data) + 1 # number of the first colum for v/S data
+
+
+  ## ------------- Pair-wise intersection and median ----------- ##
+  line.intersect <- function(v, v_S){
+    Kms <- Vms <- c()
+    for (i in 1:(length(v)-1)){
+      for (j in (i+1):length(v)){
+        Km <- (v[j] - v[i])/(v_S[i] - v_S[j])
+        Kms <- c(Kms, Km)
+        Vm <- (v_S[i]*(v[j] - v[i])/(v_S[i] - v_S[j])) + v[j]
+        Vms <- c(Vms, Vm)
+      }
+    }
+    Km <- median(Kms, na.rm = TRUE)
+    Vm <- median(Vms, na.rm = TRUE)
+    return(c(Km, Vm))
+  }
+  ## ------------------------------------------------------------ ##
+
+  ## --------------------- Estimating Km and Vm ----------------- ##
+  Kms <- Vms <- c()
+  c <- 0
+  for (i in 2:(nc - 1)){
+    p <- line.intersect(tdata[,i], tdata[,nc + c])
+    Kms <- c(p[1], Kms)
+    Vms <- c(p[2], Vms)
+    c <- c + 1
+  }
+  Km <- paste('Km: ', round(mean(Kms), 3), ' \u00b1 ', round(sd(Kms), 3), ' ', unit_S)
+  Vm <- paste('Vm: ', round(mean(Vms), 3), ' \u00b1 ', round(sd(Vms), 3), ' ', unit_v)
+  fitted_parameters <- c(round(mean(Kms, na.rm = TRUE), 3),  round(mean(Vms, na.rm = TRUE), 3))
+  names(fitted_parameters) <- c('Km', 'Vm')
+
+  ## --------------------- Plotting results --------------------- ##
+  if (plot){
+    plot(0, 0, ty = 'n',
+         xlim = c(-tdata$S[nrow(tdata)], tdata$S[nrow(tdata)]),
+         ylim = c(0, 3*max(tdata$v, na.rm = TRUE)),
+         xlab = paste("Km (", unit_S, ")", sep = ""),
+         ylab = paste("Vm (", unit_v, ")", sep = ""))
+
+    for (i in 1:nrow(tdata)){
+      points(c(0, -tdata$S[i]), c(mean_v[i], 0), pch = 20)
+      abline(mean_v[i], mean_v_S[i])
+    }
+    abline(v = 0, lty = 2)
+    abline(h = 0, lty = 2)
+  }
+
+  output <- list(fitted_parameters, Km, Vm)
+  names(output) <- c('fitted_parameters', 'Km', 'Vm')
+  return(output)
+}
+```
+
+## An R function to fit data to the Michaelis-Menten equation (non-linear regression)
+
+The name chosen for this function is *dir.MM()*. The argument taken for the function are:
+
+* *data:* dataframe containing the kinetic data to be analyzed.
+* *unit_S:* concentration unit.
+* *unit_v:* velocity unit.
+* *weighting:* logica, when TRUE the weight $v^4$ is employed.
+* *plot:* logical, if TRUE the data and fitted line are plotted and shown.
+
+```{r}
+dir.MM <- function(data, unit_S = 'mM', unit_v = 'au', plot = TRUE){
+
+  ## ---------------------------- Removing incomplete data ----------------------- ##
+  data <- data[complete.cases(data), ]
+
+  ## ---------------------------- Estimating the seed ---------------------------- ##
+  t <- ecb(data, plot = FALSE)
+  K <- t$fitted_parameters[1]
+  V <- t$fitted_parameters[2]
+  seed = list(Km = K, Vm = V)
+
+  ## ----------------------------- Fitting the curve ----------------------------- ##
+  names(data) <- c('S', 'v')
+  model <- nls(data$v ~ (Vm * data$S)/(Km + data$S), data =  data, start = seed )
+
+  ## --------------------------- Computuing parameters --------------------------- ##
+  Km <- round(summary(model)$coefficient[1,1], 3)
+  sd_Km <- round(summary(model)$coefficient[1,2], 3)
+
+  Vm <- round(summary(model)$coefficient[2,1], 3)
+  sd_Vm <- summary(model)$coefficient[2,2]
+
+  ## --------------------------- Fitted velocity lues ---------------------------- ##
+  mm.eq <- function(x) {(Vm * x)/(Km + x)}
+  data$fitted_v <- mm.eq(data$S)
+
+  ## ------------------- Plotting the transformed variables ---------------------- ##
+  if (plot){
+    parameters <- paste('Km: ', Km, '     Vm: ', Vm, sep = "")
+    plot(data$S, data$v,
+         xlab = paste("[S] (", unit_S, ")", sep = ""),
+         ylab = paste("v (", unit_v, ")", sep = ""),
+         main = parameters)
+
+    x <- seq(from = 0, to = max(data$S), by = max(data$S)/1000)
+    y <- mm.eq(x)
+    points(x, y, ty = 'l')
+
+  }
+  
+  ## --------------------------------- Output ------------------------------------ ##
+  KmVm <- c(Km, Vm)
+  names(KmVm) <- c("Km", "Vm")
+
+  output <- list(KmVm, data)
+  names(output) <- c('parameters', 'data')
+
+  return(output)
+}
+
+```
+
+
+## An example to illustrate the use of the dir.MM() and lb() functions
+
+Suppose we have assessed the initial velocities of the yeast alcohol dehydrogenase (ADH) at different concentrations of ethanol, obtaining the following kinetic data:
+
+[EtOH] ($mM$): 2, 5, 10, 20, 50, 100, 150, 300
+
+v ($\mu M/min$): 0.08,  0.306, 0.420, 0.823, 1.184, 1.09, 1.32, 1.294
+
+First, we must build a dataframe containing these kinetic data:
+
+```{r}
+data <- data.frame(S = c(2, 5,10,20,50,100,150,300),
+                   v = c(0.08, 0.306, 0.420, 0.823, 1.184, 1.09, 1.32, 1.294))
+```
+
+Obtaining the kinetic parameters for the enzyme ADH using non-linear least squares is as eassy as typing:
+
+```{r}
+dir.MM(data)
+```
+
+As this figure shown, the collected data are less than perfect, but this is a rather common (realitic) situation in the teaching lab (see Figure 1A from *J. Chem. Educ.* 2016, 93, 5, 963-970).
+
+Now we are ready to compare these $K_m$ and $V_{max}$ values (obtained using non-linear regression) with the ones obtained using double-reciprocal with or without weights. Let's start with the most popular use of double-reciprocal (linear regression without weights)
+
+### Double-reciprocal without weights
+
+```{r}
+lb(data)
+```
+
+As observed, both kinetic parameters ($K_m$ and $V_{max}$) are unacceptably overestimated using this approach.
+
+### Double-reciprocal with weights
+
+```{r}
+lb(data, weighting = TRUE)
+```
+
+However, we can verify that using the same data, but making sure that we set the argument *weighting* to TRUE, we obtain a good estimation of both parameters, $K_m$ and $V_{max}$.
+
