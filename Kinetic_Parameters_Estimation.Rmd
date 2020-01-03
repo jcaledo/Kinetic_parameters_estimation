@@ -7,9 +7,11 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+The code described in this document can be downloaded as an R markdown file from https://github.com/jcaledo/Kinetic_parameters_estimation
+
 ## Why R?
 
-R is a free and powerful software environment for statistical computing and graphics. It compiles and runs on a wide variety of UNIX platforms, Windows and MacOS. While there are many other common applications that will allow you to manipulate lists of numbers (e.g., spreadsheet programs, matlab, etc), R has an attrative advantage: R has a wide and very active community that supports it.
+R is a free and powerful software environment for statistical computing and graphics. It compiles and runs on a wide variety of UNIX platforms, Windows and MacOS. While there are many other common applications that will allow you to manipulate lists of numbers (e.g., spreadsheet programs, matlab, etc), R has an attrative advantage: a wide and very active community that supports it.
 
 If you still doubt about the benefits of R, I recommend reading why I should use R written by Barry Grant. If on the contrary, you are excited about the idea of starting to use R, then go to oficial R home page and follow the instructions to download and install R into your system. We also encourage you to install RStudio, a useful integrated development environment for R.
 
@@ -86,7 +88,7 @@ lb <- function(data, unit_S = 'mM', unit_v = 'au', weighting = FALSE, plot = TRU
 
 This function has one mandatory argument: 
 
-* *data:* a dataframe where the first column is the independent variable, [S], and the reamining columns (as many as experiment replicates) correspond to the dependent variable, v. 
+* *data:* a dataframe where the first column is the independent variable, [S], and the remaining columns (as many as experiment replicates) correspond to the dependent variable, v. 
 
 In addition, four additional arguments allow you to change the default setting:
 
@@ -258,13 +260,13 @@ data <- data.frame(S = c(2, 5,10,20,50,100,150,300),
                    v = c(0.08, 0.306, 0.420, 0.823, 1.184, 1.09, 1.32, 1.294))
 ```
 
-Obtaining the kinetic parameters for the enzyme ADH using non-linear least squares is as eassy as typing:
+Obtaining the kinetic parameters for the enzyme ADH using non-linear least squares is as easy as typing:
 
 ```{r}
 dir.MM(data)
 ```
 
-As this figure shown, the collected data are less than perfect, but this is a rather common (realitic) situation in the teaching lab (see Figure 1A from *J. Chem. Educ.* 2016, 93, 5, 963-970).
+As this figure showes, the collected data are less than perfect, but this is a rather common (realistic) situation in the teaching lab (see Figure 1A from *J. Chem. Educ.* 2016, 93, 5, 963-970).
 
 Now we are ready to compare these $K_m$ and $V_{max}$ values (obtained using non-linear regression) with the ones obtained using double-reciprocal with or without weights. Let's start with the most popular use of double-reciprocal (linear regression without weights)
 
